@@ -1,0 +1,6 @@
+{
+  "name": "MonoBounce",
+  "description": "A classic pre-color monochrome pixel-art platform game inspired by early-2000s handheld bounce games with arcade physics, 10 handcrafted levels, synthesized chiptune audio, and customizable touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

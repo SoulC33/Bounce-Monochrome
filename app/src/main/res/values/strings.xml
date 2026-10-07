@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">MonoBounce</string>
+    <string name="menu_title">BOUNCE</string>
+    <string name="menu_subtitle">MONO EDITION // 84x48 PIXEL ENGINE</string>
+    <string name="menu_continue">CONTINUE</string>
+    <string name="menu_new_game">NEW GAME</string>
+    <string name="menu_level_select">LEVEL SELECT</string>
+    <string name="menu_settings">SETTINGS</string>
+    <string name="menu_about">ABOUT</string>
+    <string name="hud_rings">RINGS</string>
+    <string name="hud_lives">LIVES</string>
+    <string name="hud_score">SCORE</string>
+    <string name="hud_level">STAGE</string>
+    <string name="btn_left">Move Left</string>
+    <string name="btn_right">Move Right</string>
+    <string name="btn_boost">Bounce Boost</string>
+    <string name="btn_pause">Pause Game</string>
+    <string name="pause_title">PAUSED</string>
+    <string name="pause_resume">RESUME</string>
+    <string name="pause_restart">RESTART STAGE</string>
+    <string name="pause_settings">CONTROL &amp; DISPLAY</string>
+    <string name="pause_quit">MAIN MENU</string>
+    <string name="level_complete_title">STAGE CLEAR!</string>
+    <string name="game_over_title">GAME OVER</string>
+    <string name="next_stage">NEXT STAGE</string>
+    <string name="retry_stage">RETRY STAGE</string>
+    <string name="back_to_menu">BACK TO MENU</string>
+</resources>
