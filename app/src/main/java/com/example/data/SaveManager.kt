@@ -130,6 +130,8 @@ class SaveManager(context: Context) {
         return GameSettings(
             soundEnabled = prefs.getBoolean(KEY_SOUND_ENABLED, true),
             musicEnabled = prefs.getBoolean(KEY_MUSIC_ENABLED, true),
+            sfxVolumePercent = prefs.getInt(KEY_SFX_VOLUME, 85).coerceIn(0, 100),
+            musicVolumePercent = prefs.getInt(KEY_MUSIC_VOLUME, 70).coerceIn(0, 100),
             hapticsEnabled = prefs.getBoolean(KEY_HAPTICS_ENABLED, true),
             pixelGridEnabled = prefs.getBoolean(KEY_PIXEL_GRID, true),
             scanlinesEnabled = prefs.getBoolean(KEY_SCANLINES, true),
@@ -147,6 +149,8 @@ class SaveManager(context: Context) {
         prefs.edit()
             .putBoolean(KEY_SOUND_ENABLED, updated.soundEnabled)
             .putBoolean(KEY_MUSIC_ENABLED, updated.musicEnabled)
+            .putInt(KEY_SFX_VOLUME, updated.sfxVolumePercent.coerceIn(0, 100))
+            .putInt(KEY_MUSIC_VOLUME, updated.musicVolumePercent.coerceIn(0, 100))
             .putBoolean(KEY_HAPTICS_ENABLED, updated.hapticsEnabled)
             .putBoolean(KEY_PIXEL_GRID, updated.pixelGridEnabled)
             .putBoolean(KEY_SCANLINES, updated.scanlinesEnabled)
@@ -256,6 +260,8 @@ class SaveManager(context: Context) {
         private const val KEY_HIGH_SCORE = "high_score"
         private const val KEY_SOUND_ENABLED = "sound_enabled"
         private const val KEY_MUSIC_ENABLED = "music_enabled"
+        private const val KEY_SFX_VOLUME = "sfx_volume_percent"
+        private const val KEY_MUSIC_VOLUME = "music_volume_percent"
         private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
         private const val KEY_PIXEL_GRID = "pixel_grid_enabled"
         private const val KEY_SCANLINES = "scanlines_enabled"

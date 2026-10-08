@@ -62,7 +62,8 @@ fun MainMenuScreen(
     onNewGame: () -> Unit,
     onLevelSelect: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenAbout: () -> Unit
+    onOpenAbout: () -> Unit,
+    onExitApp: () -> Unit
 ) {
     val palette = settings.paletteMode.toColors()
 
@@ -221,6 +222,16 @@ fun MainMenuScreen(
                 primary = false,
                 testTag = "menu_about_button",
                 onClick = onOpenAbout
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            RetroMenuButton(
+                text = "> EXIT",
+                subtitle = "QUIT MONOBOUNCE TO HOME SCREEN",
+                palette = palette,
+                primary = false,
+                testTag = "menu_exit_button",
+                onClick = onExitApp
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -544,6 +555,97 @@ fun SettingsScreen(
                 testTag = "toggle_music",
                 onToggle = { onUpdateSettings { s -> s.copy(musicEnabled = !s.musicEnabled) } }
             )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Volume Controller Panel (SFX & Music Volume Bars + Sliders)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, palette.pixelMid)
+                    .background(palette.bgSurface)
+                    .padding(14.dp)
+            ) {
+                val sfxBars = (settings.sfxVolumePercent / 10).coerceIn(0, 10)
+                val sfxBarText = "|".repeat(sfxBars) + ".".repeat(10 - sfxBars)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SFX VOLUME",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.pixelBright
+                    )
+                    Text(
+                        text = "[$sfxBarText] ${settings.sfxVolumePercent}%",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = palette.pixelBright
+                    )
+                }
+                Slider(
+                    value = settings.sfxVolumePercent.toFloat(),
+                    onValueChange = { v ->
+                        val rounded = (v.toInt() / 5) * 5
+                        onUpdateSettings { s ->
+                            s.copy(
+                                sfxVolumePercent = rounded.coerceIn(0, 100),
+                                soundEnabled = rounded > 0
+                            )
+                        }
+                    },
+                    valueRange = 0f..100f,
+                    steps = 19,
+                    modifier = Modifier.testTag("slider_sfx_volume"),
+                    colors = SliderDefaults.colors(
+                        thumbColor = palette.pixelBright,
+                        activeTrackColor = palette.pixelBright,
+                        inactiveTrackColor = palette.pixelDim
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val musicBars = (settings.musicVolumePercent / 10).coerceIn(0, 10)
+                val musicBarText = "|".repeat(musicBars) + ".".repeat(10 - musicBars)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "MUSIC VOLUME",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.pixelBright
+                    )
+                    Text(
+                        text = "[$musicBarText] ${settings.musicVolumePercent}%",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = palette.pixelBright
+                    )
+                }
+                Slider(
+                    value = settings.musicVolumePercent.toFloat(),
+                    onValueChange = { v ->
+                        val rounded = (v.toInt() / 5) * 5
+                        onUpdateSettings { s ->
+                            s.copy(
+                                musicVolumePercent = rounded.coerceIn(0, 100),
+                                musicEnabled = rounded > 0
+                            )
+                        }
+                    },
+                    valueRange = 0f..100f,
+                    steps = 19,
+                    modifier = Modifier.testTag("slider_music_volume"),
+                    colors = SliderDefaults.colors(
+                        thumbColor = palette.pixelBright,
+                        activeTrackColor = palette.pixelBright,
+                        inactiveTrackColor = palette.pixelDim
+                    )
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
             SettingToggleRow(
                 label = "TACTILE HAPTICS",

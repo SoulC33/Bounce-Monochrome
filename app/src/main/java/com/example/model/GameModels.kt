@@ -100,6 +100,8 @@ enum class ControlLayoutPreset(val label: String) {
 data class GameSettings(
     val soundEnabled: Boolean = true,
     val musicEnabled: Boolean = true,
+    val sfxVolumePercent: Int = 85,
+    val musicVolumePercent: Int = 70,
     val hapticsEnabled: Boolean = true,
     val pixelGridEnabled: Boolean = true,
     val scanlinesEnabled: Boolean = true,

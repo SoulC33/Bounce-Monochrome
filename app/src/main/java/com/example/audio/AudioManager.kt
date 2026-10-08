@@ -41,6 +41,12 @@ class AudioManager(context: Context) {
     var musicEnabled: Boolean = true
 
     @Volatile
+    var sfxVolumeScale: Float = 0.85f
+
+    @Volatile
+    var musicVolumeScale: Float = 0.70f
+
+    @Volatile
     var hapticsEnabled: Boolean = true
 
     private var musicJob: Job? = null
@@ -252,7 +258,7 @@ class AudioManager(context: Context) {
 
         musicJob = audioScope.launch {
             while (isActive && musicEnabled) {
-                synthesizeAndPlayBlocking(phraseNotes)
+                synthesizeAndPlayBlocking(phraseNotes, volumeScale = musicVolumeScale)
             }
         }
     }
@@ -276,17 +282,24 @@ class AudioManager(context: Context) {
     }
 
     private fun playSequence(notes: List<ToneNote>) {
+        if (sfxVolumeScale <= 0.01f) return
         if (!sfxSemaphore.tryAcquire()) return
         audioScope.launch {
             try {
-                synthesizeAndPlayBlocking(notes)
+                synthesizeAndPlayBlocking(notes, volumeScale = sfxVolumeScale)
             } finally {
                 sfxSemaphore.release()
             }
         }
     }
 
-    private suspend fun synthesizeAndPlayBlocking(notes: List<ToneNote>) {
+    private suspend fun synthesizeAndPlayBlocking(notes: List<ToneNote>, volumeScale: Float = 1.0f) {
+        val clampedScale = volumeScale.coerceIn(0f, 1f)
+        if (clampedScale <= 0.01f) {
+            val totalDurationMs = notes.sumOf { it.durationMs }.toLong()
+            delay(totalDurationMs.coerceAtLeast(20L))
+            return
+        }
         val sampleRate = 22050
         val totalSamples = notes.sumOf { (sampleRate * it.durationMs) / 1000 }
         if (totalSamples <= 0) return
@@ -297,7 +310,7 @@ class AudioManager(context: Context) {
         for (note in notes) {
             val count = (sampleRate * note.durationMs) / 1000
             val freq = note.freqHz
-            val amp = (Short.MAX_VALUE * note.volume).toInt()
+            val amp = (Short.MAX_VALUE * note.volume * clampedScale).toInt()
             val fadeSamples = minOf(count / 6, 80)
 
             for (i in 0 until count) {

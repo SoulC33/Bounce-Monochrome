@@ -53,7 +53,13 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = settings.paletteMode.toColors().bgDeep
                 ) {
-                    MonoBounceApp(game = gameViewModel)
+                    MonoBounceApp(
+                        game = gameViewModel,
+                        onExitApp = {
+                            gameViewModel.audioManager.stopGameplayMusic()
+                            finishAffinity()
+                        }
+                    )
                 }
             }
         }
@@ -99,7 +105,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MonoBounceApp(game: Game) {
+fun MonoBounceApp(
+    game: Game,
+    onExitApp: () -> Unit = {}
+) {
     val gameState by game.gameState.collectAsStateWithLifecycle()
     val settings by game.settings.collectAsStateWithLifecycle()
     val highestUnlocked by game.highestUnlockedLevel.collectAsStateWithLifecycle()
@@ -121,7 +130,8 @@ fun MonoBounceApp(game: Game) {
                 onNewGame = { game.startNewGame() },
                 onLevelSelect = { game.openLevelSelect() },
                 onOpenSettings = { game.openSettings(fromPause = false) },
-                onOpenAbout = { game.openAbout() }
+                onOpenAbout = { game.openAbout() },
+                onExitApp = onExitApp
             )
         }
 

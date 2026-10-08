@@ -94,9 +94,11 @@ class Game(application: Application) : AndroidViewModel(application) {
             settings.collect { s ->
                 audioManager.soundEnabled = s.soundEnabled
                 audioManager.musicEnabled = s.musicEnabled
+                audioManager.sfxVolumeScale = (s.sfxVolumePercent / 100f).coerceIn(0f, 1f)
+                audioManager.musicVolumeScale = (s.musicVolumePercent / 100f).coerceIn(0f, 1f)
                 audioManager.hapticsEnabled = s.hapticsEnabled
                 if (_gameState.value == GameState.GAMEPLAY) {
-                    if (s.musicEnabled) {
+                    if (s.musicEnabled && s.musicVolumePercent > 0) {
                         audioManager.startGameplayMusic()
                     } else {
                         audioManager.stopGameplayMusic()
