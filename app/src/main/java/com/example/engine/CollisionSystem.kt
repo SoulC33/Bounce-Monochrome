@@ -32,19 +32,22 @@ class CollisionSystem(private val physics: Physics) {
         val events = CollisionStepEvents()
         val ringsBefore = level.ringsCollected
 
-        // 1. Horizontal movement & X-axis tile collision
-        player.x += player.vx
-        resolveHorizontalTileCollisions(player, level)
-
-        // 2. Vertical movement & Y-axis tile / slope / moving-platform collision
+        val prevX = player.x
         val prevY = player.y
+
+        // 1. Horizontal movement & X-axis tile collision (with slope-seam & ledge-lip awareness)
+        player.x += player.vx
+        resolveHorizontalTileCollisions(player, prevX, level)
+
+        // 2. Vertical movement & Y-axis slope / moving-platform / solid-tile collision
         player.y += player.vy
 
-        // Check slope tiles before standard solid blocks so diagonal ramps feel seamless
-        val handledBySlope = resolveSlopeCollisions(player, level, events, particles)
+        val handledBySlope = resolveSlopeCollisions(player, prevY, level, events, particles)
         if (!handledBySlope) {
-            resolveMovingPlatformCollisions(player, prevY, level, events, particles)
-            resolveVerticalTileCollisions(player, level, events, particles)
+            val handledByPlatform = resolveMovingPlatformCollisions(player, prevY, level, events, particles)
+            if (!handledByPlatform) {
+                resolveVerticalTileCollisions(player, prevY, level, events, particles)
+            }
         }
 
         // 3. Check hazards (spikes, patrolling saws/pistons, and bottomless pits)
@@ -78,36 +81,76 @@ class CollisionSystem(private val physics: Physics) {
         return events
     }
 
-    private fun resolveHorizontalTileCollisions(player: Player, level: Level) {
+    private fun resolveHorizontalTileCollisions(player: Player, prevX: Float, level: Level) {
         val r = player.radius
-        val minGy = floor((player.y - r + 1.2f) / Level.TILE_SIZE).toInt()
-        val maxGy = floor((player.y + r - 1.2f) / Level.TILE_SIZE).toInt()
+        val currentCenterGx = floor(prevX / Level.TILE_SIZE).toInt()
+        val currentFootGy = floor((player.y + r - 0.5f) / Level.TILE_SIZE).toInt()
+        val currentCenterGy = floor(player.y / Level.TILE_SIZE).toInt()
+
+        val onSlopeAtFoot = level.getTileAtGrid(currentCenterGx, currentFootGy).let {
+            it == TileType.SLOPE_UP_RIGHT || it == TileType.SLOPE_DOWN_RIGHT
+        }
+        val onSlopeAtCenter = level.getTileAtGrid(currentCenterGx, currentCenterGy).let {
+            it == TileType.SLOPE_UP_RIGHT || it == TileType.SLOPE_DOWN_RIGHT
+        }
+
+        // Inset vertical bounds slightly so top/bottom grazing doesn't snag on vertical seams
+        val minGy = floor((player.y - r + 1.5f) / Level.TILE_SIZE).toInt()
+        val maxGy = floor((player.y + r - 1.5f) / Level.TILE_SIZE).toInt()
 
         if (player.vx > 0f) {
             val rightGx = floor((player.x + r) / Level.TILE_SIZE).toInt()
             for (gy in minGy..maxGy) {
                 val tile = level.getTileAtGrid(rightGx, gy)
-                if (level.isSolidTile(tile)) {
-                    player.x = rightGx * Level.TILE_SIZE - r - 0.01f
-                    player.vx = -player.vx * 0.45f // Slight wall rebound
-                    break
+                if (!level.isSolidTile(tile)) continue
+
+                // If climbing a SLOPE_UP_RIGHT onto a flush platform tile at the same row, do not block
+                if ((onSlopeAtFoot && gy == currentFootGy) || (onSlopeAtCenter && gy == currentCenterGy)) {
+                    continue
                 }
+
+                // Ledge lip forgiveness: if the ball's bottom is within 2.4px of the top of this tile
+                // and the space above this tile is open, step up onto the ledge instead of stopping
+                val tileTopY = gy * Level.TILE_SIZE
+                val aboveTile = level.getTileAtGrid(rightGx, gy - 1)
+                if ((player.y + r) - tileTopY <= 2.4f && !level.isSolidTile(aboveTile)) {
+                    player.y = tileTopY - r - 0.01f
+                    continue
+                }
+
+                player.x = rightGx * Level.TILE_SIZE - r - 0.01f
+                player.vx = 0f
+                break
             }
         } else if (player.vx < 0f) {
             val leftGx = floor((player.x - r) / Level.TILE_SIZE).toInt()
             for (gy in minGy..maxGy) {
                 val tile = level.getTileAtGrid(leftGx, gy)
-                if (level.isSolidTile(tile)) {
-                    player.x = (leftGx + 1) * Level.TILE_SIZE + r + 0.01f
-                    player.vx = -player.vx * 0.45f
-                    break
+                if (!level.isSolidTile(tile)) continue
+
+                // If climbing a SLOPE_DOWN_RIGHT leftward onto a flush platform tile at the same row, do not block
+                if ((onSlopeAtFoot && gy == currentFootGy) || (onSlopeAtCenter && gy == currentCenterGy)) {
+                    continue
                 }
+
+                // Ledge lip forgiveness
+                val tileTopY = gy * Level.TILE_SIZE
+                val aboveTile = level.getTileAtGrid(leftGx, gy - 1)
+                if ((player.y + r) - tileTopY <= 2.4f && !level.isSolidTile(aboveTile)) {
+                    player.y = tileTopY - r - 0.01f
+                    continue
+                }
+
+                player.x = (leftGx + 1) * Level.TILE_SIZE + r + 0.01f
+                player.vx = 0f
+                break
             }
         }
     }
 
     private fun resolveSlopeCollisions(
         player: Player,
+        prevY: Float,
         level: Level,
         events: CollisionStepEvents,
         particles: MutableList<PixelParticle>
@@ -117,25 +160,22 @@ class CollisionSystem(private val physics: Physics) {
         val footGy = floor((player.y + r) / Level.TILE_SIZE).toInt()
         val centerGy = floor(player.y / Level.TILE_SIZE).toInt()
 
-        for (gy in listOf(footGy, centerGy)) {
+        for (gy in listOf(centerGy, footGy)) {
             val tile = level.getTileAtGrid(gx, gy)
             if (tile == TileType.SLOPE_UP_RIGHT || tile == TileType.SLOPE_DOWN_RIGHT) {
                 val localX = (player.x - gx * Level.TILE_SIZE).coerceIn(0f, Level.TILE_SIZE)
                 val floorY = if (tile == TileType.SLOPE_UP_RIGHT) {
-                    // Ascending left-to-right: bottom-left (gy+1)*8 to top-right gy*8
                     (gy + 1) * Level.TILE_SIZE - localX
                 } else {
-                    // Descending left-to-right: top-left gy*8 to bottom-right (gy+1)*8
                     gy * Level.TILE_SIZE + localX
                 }
 
-                if (player.y + r >= floorY && player.vy >= 0f) {
-                    player.y = floorY - r
+                // Only resolve top-surface slope bounce if approaching from above (not jumping into underside from below)
+                val wasAboveSlope = (prevY + r) <= (floorY + 4.5f)
+                if (wasAboveSlope && (player.y + r) >= floorY && player.vy >= 0f) {
+                    player.y = floorY - r - 0.01f
                     val boost = player.boostQueuedTicks > 0
                     player.vy = physics.computeBounceVelocity(SurfaceType.SLOPE, boost)
-                    // Slight slope horizontal nudge
-                    val slopeNudge = if (tile == TileType.SLOPE_UP_RIGHT) -0.22f else 0.22f
-                    player.vx = (player.vx + slopeNudge).coerceIn(-Physics.MAX_SPEED_X * 1.15f, Physics.MAX_SPEED_X * 1.15f)
                     onPlayerBounced(player, SurfaceType.SLOPE, boost, events, particles)
                     return true
                 }
@@ -150,54 +190,59 @@ class CollisionSystem(private val physics: Physics) {
         level: Level,
         events: CollisionStepEvents,
         particles: MutableList<PixelParticle>
-    ) {
-        if (player.vy < 0f) return
+    ): Boolean {
+        if (player.vy < 0f) return false
         val r = player.radius
 
         for (plat in level.movingPlatforms) {
-            val withinX = player.x + r * 0.75f >= plat.x && player.x - r * 0.75f <= plat.x + plat.width
-            val wasAbove = (prevY + r) <= (plat.prevY + 2.5f)
-            val isNowTouching = (player.y + r) >= plat.y && (player.y - r) <= (plat.y + plat.height)
+            val withinX = (player.x + r * 0.70f) >= plat.x && (player.x - r * 0.70f) <= (plat.x + plat.width)
+            // Must have been above (or at) the platform's top surface on the previous tick
+            // AND must now be intersecting the platform's top surface!
+            val wasAbove = (prevY + r) <= (plat.prevY + 3.5f)
+            val isNowTouchingTop = (player.y + r) >= plat.y && (player.y + r) <= (plat.y + plat.height + 3.5f)
 
-            if (withinX && (wasAbove || isNowTouching)) {
+            if (withinX && wasAbove && isNowTouchingTop) {
                 player.y = plat.y - r - 0.01f
-                player.x += plat.deltaX
+                player.x = (player.x + plat.deltaX).coerceIn(r + 8f, level.pixelWidth - r - 8f)
                 val boost = player.boostQueuedTicks > 0
                 player.vy = physics.computeBounceVelocity(SurfaceType.MOVING_PLATFORM, boost) + minOf(0f, plat.deltaY)
                 onPlayerBounced(player, SurfaceType.MOVING_PLATFORM, boost, events, particles)
-                return
+                return true
             }
         }
+        return false
     }
 
     private fun resolveVerticalTileCollisions(
         player: Player,
+        prevY: Float,
         level: Level,
         events: CollisionStepEvents,
         particles: MutableList<PixelParticle>
     ) {
         val r = player.radius
-        val minGx = floor((player.x - r + 1.0f) / Level.TILE_SIZE).toInt()
-        val maxGx = floor((player.x + r - 1.0f) / Level.TILE_SIZE).toInt()
 
         if (player.vy >= 0f) {
+            val minGx = floor((player.x - r + 1.1f) / Level.TILE_SIZE).toInt()
+            val maxGx = floor((player.x + r - 1.1f) / Level.TILE_SIZE).toInt()
             val bottomGy = floor((player.y + r) / Level.TILE_SIZE).toInt()
-            var hitTile: TileType? = null
-            var hitGx = minGx
+            val tileTopY = bottomGy * Level.TILE_SIZE
 
+            // Ensure the ball was above or near the top of this tile row before landing
+            if ((prevY + r) > tileTopY + 4.5f) return
+
+            var hitTile: TileType? = null
             for (gx in minGx..maxGx) {
                 val tile = level.getTileAtGrid(gx, bottomGy)
                 if (level.isSolidTile(tile)) {
-                    // Prioritize spring pad if touching multiple tiles
                     if (hitTile == null || tile == TileType.SPRING_PAD) {
                         hitTile = tile
-                        hitGx = gx
                     }
                 }
             }
 
             if (hitTile != null) {
-                player.y = bottomGy * Level.TILE_SIZE - r - 0.01f
+                player.y = tileTopY - r - 0.01f
                 val surface = when (hitTile) {
                     TileType.SPRING_PAD -> SurfaceType.SPRING
                     TileType.DAMP_FLOOR -> SurfaceType.DAMPENED
@@ -216,14 +261,21 @@ class CollisionSystem(private val physics: Physics) {
                 onPlayerBounced(player, surface, boost, events, particles)
             }
         } else {
-            // Ceiling collision when moving upward
+            // Ceiling collision when moving upward: use a narrower horizontal inset (r - 1.5f)
+            // so grazing the vertical corner of an overhead ledge doesn't bonk the player downward
+            val minGx = floor((player.x - r + 1.5f) / Level.TILE_SIZE).toInt()
+            val maxGx = floor((player.x + r - 1.5f) / Level.TILE_SIZE).toInt()
             val topGy = floor((player.y - r) / Level.TILE_SIZE).toInt()
+            val tileBottomY = (topGy + 1) * Level.TILE_SIZE
+
+            if ((prevY - r) < tileBottomY - 4.5f) return
+
             for (gx in minGx..maxGx) {
                 val tile = level.getTileAtGrid(gx, topGy)
                 if (level.isSolidTile(tile)) {
-                    player.y = (topGy + 1) * Level.TILE_SIZE + r + 0.01f
-                    player.vy = abs(player.vy) * 0.45f
-                    player.squashFrames = 4
+                    player.y = tileBottomY + r + 0.01f
+                    player.vy = abs(player.vy) * 0.35f
+                    player.squashFrames = 3
                     spawnBounceSparks(particles, player.x, player.y - r, 3)
                     break
                 }
@@ -262,8 +314,8 @@ class CollisionSystem(private val physics: Physics) {
             return false
         }
 
-        // Static spike tiles check (slightly forgiving inner hitbox so pixel corners feel fair)
-        val checkRadius = player.radius * 0.68f
+        // Static spike tiles check (forgiving inner hitbox so pixel corners feel fair)
+        val checkRadius = player.radius * 0.62f
         val minGx = floor((player.x - checkRadius) / Level.TILE_SIZE).toInt()
         val maxGx = floor((player.x + checkRadius) / Level.TILE_SIZE).toInt()
         val minGy = floor((player.y - checkRadius) / Level.TILE_SIZE).toInt()
@@ -283,7 +335,7 @@ class CollisionSystem(private val physics: Physics) {
             val closestX = player.x.coerceIn(hazard.x, hazard.x + hazard.width)
             val closestY = player.y.coerceIn(hazard.y, hazard.y + hazard.height)
             val dist = hypot(player.x - closestX, player.y - closestY)
-            if (dist < player.radius * 0.78f) {
+            if (dist < player.radius * 0.72f) {
                 return true
             }
         }
@@ -299,7 +351,7 @@ class CollisionSystem(private val physics: Physics) {
     ) {
         for (item in level.collectibles) {
             if (item.collected) continue
-            val pickupRadius = if (item.type == CollectibleType.RING) player.radius + 4.2f else player.radius + 3.2f
+            val pickupRadius = if (item.type == CollectibleType.RING) player.radius + 4.5f else player.radius + 3.5f
             val dist = hypot(player.x - item.x, player.y - item.y)
             if (dist <= pickupRadius) {
                 item.collected = true
@@ -319,7 +371,7 @@ class CollisionSystem(private val physics: Physics) {
         for (cp in level.checkpoints) {
             if (cp.activated) continue
             val dist = hypot(player.x - cp.worldX, player.y - cp.worldY)
-            if (dist <= player.radius + 5.5f) {
+            if (dist <= player.radius + 5.8f) {
                 cp.activated = true
                 player.respawnX = cp.worldX
                 player.respawnY = cp.worldY - 2f
@@ -333,7 +385,7 @@ class CollisionSystem(private val physics: Physics) {
         val exitCenterX = (level.exitGridX + 0.5f) * Level.TILE_SIZE
         val exitCenterY = (level.exitGridY + 0.5f) * Level.TILE_SIZE
         val dist = hypot(player.x - exitCenterX, player.y - exitCenterY)
-        return dist <= player.radius + 5.0f
+        return dist <= player.radius + 5.5f
     }
 
     private fun spawnBounceSparks(
@@ -342,6 +394,7 @@ class CollisionSystem(private val physics: Physics) {
         y: Float,
         count: Int
     ) {
+        if (particles.size > 60) return
         repeat(count) {
             val vx = (Random.nextFloat() - 0.5f) * 1.4f
             val vy = -Random.nextFloat() * 1.1f - 0.2f
@@ -365,6 +418,7 @@ class CollisionSystem(private val physics: Physics) {
         y: Float,
         count: Int
     ) {
+        if (particles.size > 80) return
         repeat(count) { i ->
             val angle = (i.toFloat() / count) * 6.28318f
             val speed = 0.6f + Random.nextFloat() * 1.1f

@@ -216,6 +216,12 @@ class Game(application: Application) : AndroidViewModel(application) {
             audioManager.playGameOver()
             _gameState.value = GameState.GAME_OVER
         } else {
+            // Restore all fragile crumble blocks on respawn so player is never stranded
+            for (crumble in currentLevel.crumbleBlocks.values) {
+                crumble.triggered = false
+                crumble.ticksRemaining = 22
+                crumble.respawnTicks = 0
+            }
             player.resetTo(player.respawnX, player.respawnY, fullReset = false)
             player.hitFreezeFrames = 14
             camera.snapToPlayer(player, currentLevel)

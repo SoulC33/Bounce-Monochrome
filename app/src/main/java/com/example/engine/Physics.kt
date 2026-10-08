@@ -10,25 +10,23 @@ import kotlin.math.sin
 
 class Physics {
     companion object {
-        // Tuned for crisp, responsive 60 FPS arcade feel in 160x96 logical pixel space (8px = 1 tile)
-        const val GRAVITY = 0.145f
-        const val MAX_FALL_SPEED = 3.25f
+        // Tuned for crisp, responsive 60 FPS arcade feel in 160x96 logical pixel space (8px = 1 tile).
+        // Standard platform step is 3 tiles (24px).
+        // With GRAVITY = 0.135f and BASE_BOUNCE_VY = -2.88f, every normal automatic bounce
+        // rises ~30.5px (~3.8 tiles), comfortably clearing 3-tile platforms without needing Boost!
+        const val GRAVITY = 0.135f
+        const val MAX_FALL_SPEED = 3.20f
 
-        const val ACCEL_X = 0.22f
-        const val TURN_ACCEL_X = 0.34f
+        const val ACCEL_X = 0.23f
+        const val TURN_ACCEL_X = 0.36f
         const val MAX_SPEED_X = 1.65f
         const val FRICTION_X = 0.80f
 
-        // Automatic bounce velocities (negative Y is up)
-        // Normal bounce (-2.55f) reaches ~22.4px (~2.8 tiles) high
-        // Boosted bounce (-3.05f) reaches ~32.0px (~4.0 tiles) high
-        // Spring bounce (-3.65f) reaches ~45.9px (~5.7 tiles) high
-        // Dampened bounce (-1.75f) reaches ~10.5px (~1.3 tiles) high
-        const val BASE_BOUNCE_VY = -2.55f
-        const val BOOST_BOUNCE_VY = -3.08f
-        const val SPRING_BOUNCE_VY = -3.65f
-        const val DAMP_BOUNCE_VY = -1.72f
-        const val AIR_BOOST_IMPULSE_VY = -2.42f
+        const val BASE_BOUNCE_VY = -2.88f
+        const val BOOST_BOUNCE_VY = -3.42f
+        const val SPRING_BOUNCE_VY = -3.92f
+        const val DAMP_BOUNCE_VY = -1.95f
+        const val AIR_BOOST_IMPULSE_VY = -2.68f
     }
 
     fun updatePlayerPhysics(
@@ -52,11 +50,11 @@ class Physics {
         // Check if player tapped or held Boost
         val justBoosted = input.consumeBoostJustPressed()
         if (justBoosted || input.boostHeld) {
-            player.boostQueuedTicks = 10
+            player.boostQueuedTicks = 12
         }
 
         // Mid-air boost hop: allows one active mid-air upward boost per bounce cycle for extra vertical control
-        if (justBoosted && player.airBoostAvailable && player.vy > -1.2f) {
+        if (justBoosted && player.airBoostAvailable && player.vy > -1.35f) {
             player.vy = minOf(player.vy, AIR_BOOST_IMPULSE_VY)
             player.airBoostAvailable = false
             player.stretchFrames = 6
@@ -90,10 +88,10 @@ class Physics {
 
     fun computeBounceVelocity(surface: SurfaceType, boostActive: Boolean): Float {
         return when (surface) {
-            SurfaceType.SPRING -> if (boostActive) SPRING_BOUNCE_VY * 1.07f else SPRING_BOUNCE_VY
-            SurfaceType.DAMPENED -> if (boostActive) BASE_BOUNCE_VY * 0.88f else DAMP_BOUNCE_VY
-            SurfaceType.SLOPE -> if (boostActive) BOOST_BOUNCE_VY else BASE_BOUNCE_VY * 1.03f
-            SurfaceType.MOVING_PLATFORM -> if (boostActive) BOOST_BOUNCE_VY * 1.03f else BASE_BOUNCE_VY * 1.04f
+            SurfaceType.SPRING -> if (boostActive) SPRING_BOUNCE_VY * 1.06f else SPRING_BOUNCE_VY
+            SurfaceType.DAMPENED -> if (boostActive) BASE_BOUNCE_VY * 0.92f else DAMP_BOUNCE_VY
+            SurfaceType.SLOPE -> if (boostActive) BOOST_BOUNCE_VY else BASE_BOUNCE_VY
+            SurfaceType.MOVING_PLATFORM -> if (boostActive) BOOST_BOUNCE_VY else BASE_BOUNCE_VY * 1.03f
             SurfaceType.NORMAL -> if (boostActive) BOOST_BOUNCE_VY else BASE_BOUNCE_VY
         }
     }
@@ -103,7 +101,7 @@ class Physics {
         for (plat in level.movingPlatforms) {
             plat.prevX = plat.x
             plat.prevY = plat.y
-            plat.phase += 0.035f
+            plat.phase += 0.032f
             if (plat.phase > (2f * PI).toFloat()) {
                 plat.phase -= (2f * PI).toFloat()
             }
@@ -117,7 +115,7 @@ class Physics {
 
         // Update patrolling hazards
         for (hazard in level.hazards) {
-            hazard.phase += 0.045f
+            hazard.phase += 0.04f
             if (hazard.phase > (2f * PI).toFloat()) {
                 hazard.phase -= (2f * PI).toFloat()
             }
@@ -129,19 +127,19 @@ class Physics {
             }
         }
 
-        // Update crumble tiles (crack after bounce, then regenerate after 3 seconds)
+        // Update crumble tiles (crack after bounce, then regenerate after 2.5 seconds)
         for (state in level.crumbleBlocks.values) {
             if (state.triggered) {
                 if (state.ticksRemaining > 0) {
                     state.ticksRemaining--
                     if (state.ticksRemaining == 0) {
-                        state.respawnTicks = 180 // Regenerates after 3 seconds so player is never soft-locked
+                        state.respawnTicks = 150
                     }
                 } else if (state.respawnTicks > 0) {
                     state.respawnTicks--
                     if (state.respawnTicks == 0) {
                         state.triggered = false
-                        state.ticksRemaining = 20
+                        state.ticksRemaining = 22
                     }
                 }
             }

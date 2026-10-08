@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -29,6 +30,9 @@ data class ToneNote(
 class AudioManager(context: Context) {
     private val appContext = context.applicationContext
     private val audioScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Prevent exhausting Android's per-process AudioFlinger track limit during rapid bounces
+    private val sfxSemaphore = Semaphore(4)
 
     @Volatile
     var soundEnabled: Boolean = true
@@ -173,7 +177,6 @@ class AudioManager(context: Context) {
     fun playLevelComplete() {
         if (hapticsEnabled) vibratePulse(35L)
         if (!soundEnabled) return
-        // Classic Nokia monophonic ringtone-inspired victory fanfare
         playSequence(
             listOf(
                 ToneNote(523.25, 70, 0.5, 0.26f),
@@ -228,34 +231,28 @@ class AudioManager(context: Context) {
         }
         if (musicJob?.isActive == true) return
 
-        // Subtle, nostalgic early-2000s monophonic background pulse loop
-        val loopNotes = listOf(
-            ToneNote(220.00, 130, 0.25, 0.07f),
+        // Synthesize the entire bar phrase as one static buffer per cycle to avoid
+        // rapid AudioTrack creation and guarantee clean cancellation
+        val phraseNotes = listOf(
+            ToneNote(220.00, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(261.63, 130, 0.25, 0.07f),
+            ToneNote(261.63, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(329.63, 130, 0.25, 0.07f),
+            ToneNote(329.63, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(293.66, 130, 0.25, 0.07f),
+            ToneNote(293.66, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(196.00, 130, 0.25, 0.07f),
+            ToneNote(196.00, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(246.94, 130, 0.25, 0.07f),
+            ToneNote(246.94, 130, 0.25, 0.06f),
             ToneNote(0.0, 50, 0.25, 0f),
-            ToneNote(220.00, 180, 0.25, 0.07f),
+            ToneNote(220.00, 180, 0.25, 0.06f),
             ToneNote(0.0, 180, 0.25, 0f)
         )
 
         musicJob = audioScope.launch {
-            var idx = 0
             while (isActive && musicEnabled) {
-                val note = loopNotes[idx % loopNotes.size]
-                if (note.freqHz > 0.0 && musicEnabled) {
-                    synthesizeAndPlayBlocking(listOf(note))
-                } else {
-                    delay(note.durationMs.toLong())
-                }
-                idx++
+                synthesizeAndPlayBlocking(phraseNotes)
             }
         }
     }
@@ -279,48 +276,53 @@ class AudioManager(context: Context) {
     }
 
     private fun playSequence(notes: List<ToneNote>) {
+        if (!sfxSemaphore.tryAcquire()) return
         audioScope.launch {
-            synthesizeAndPlayBlocking(notes)
+            try {
+                synthesizeAndPlayBlocking(notes)
+            } finally {
+                sfxSemaphore.release()
+            }
         }
     }
 
     private suspend fun synthesizeAndPlayBlocking(notes: List<ToneNote>) {
-        runCatching {
-            val sampleRate = 22050
-            val totalSamples = notes.sumOf { (sampleRate * it.durationMs) / 1000 }
-            if (totalSamples <= 0) return
+        val sampleRate = 22050
+        val totalSamples = notes.sumOf { (sampleRate * it.durationMs) / 1000 }
+        if (totalSamples <= 0) return
 
-            val pcm = ShortArray(totalSamples)
-            var offset = 0
+        val pcm = ShortArray(totalSamples)
+        var offset = 0
 
-            for (note in notes) {
-                val count = (sampleRate * note.durationMs) / 1000
-                val freq = note.freqHz
-                val amp = (Short.MAX_VALUE * note.volume).toInt()
-                val fadeSamples = minOf(count / 6, 80)
+        for (note in notes) {
+            val count = (sampleRate * note.durationMs) / 1000
+            val freq = note.freqHz
+            val amp = (Short.MAX_VALUE * note.volume).toInt()
+            val fadeSamples = minOf(count / 6, 80)
 
-                for (i in 0 until count) {
-                    if (offset + i >= totalSamples) break
-                    if (freq <= 1.0) {
-                        pcm[offset + i] = 0
-                    } else {
-                        // Classic 1-bit square wave with subtle envelope to prevent harsh speaker clicks
-                        val phase = (i.toDouble() * freq / sampleRate) % 1.0
-                        val rawSquare = if (phase < note.dutyCycle) 1.0 else -1.0
-                        val subHarmonic = sin(2.0 * PI * (freq * 0.5) * i / sampleRate) * 0.15
-                        val env = when {
-                            i < fadeSamples && fadeSamples > 0 -> i.toDouble() / fadeSamples
-                            i > count - fadeSamples && fadeSamples > 0 -> (count - i).toDouble() / fadeSamples
-                            else -> 1.0
-                        }
-                        val sampleVal = ((rawSquare * 0.85 + subHarmonic) * amp * env).toInt()
-                            .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                        pcm[offset + i] = sampleVal.toShort()
+            for (i in 0 until count) {
+                if (offset + i >= totalSamples) break
+                if (freq <= 1.0) {
+                    pcm[offset + i] = 0
+                } else {
+                    val phase = (i.toDouble() * freq / sampleRate) % 1.0
+                    val rawSquare = if (phase < note.dutyCycle) 1.0 else -1.0
+                    val subHarmonic = sin(2.0 * PI * (freq * 0.5) * i / sampleRate) * 0.15
+                    val env = when {
+                        i < fadeSamples && fadeSamples > 0 -> i.toDouble() / fadeSamples
+                        i > count - fadeSamples && fadeSamples > 0 -> (count - i).toDouble() / fadeSamples
+                        else -> 1.0
                     }
+                    val sampleVal = ((rawSquare * 0.85 + subHarmonic) * amp * env).toInt()
+                        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    pcm[offset + i] = sampleVal.toShort()
                 }
-                offset += count
             }
+            offset += count
+        }
 
+        var track: AudioTrack? = null
+        try {
             val byteSize = pcm.size * 2
             val minBuf = AudioTrack.getMinBufferSize(
                 sampleRate,
@@ -329,30 +331,33 @@ class AudioManager(context: Context) {
             )
             val bufferSize = maxOf(byteSize, minBuf)
 
-            val track = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufferSize)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
+            track = runCatching {
+                AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(bufferSize)
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .build()
+            }.getOrNull() ?: return
 
             track.write(pcm, 0, pcm.size)
             track.play()
             val totalDurationMs = notes.sumOf { it.durationMs }.toLong()
             delay(totalDurationMs + 15L)
-            track.stop()
-            track.release()
+        } finally {
+            runCatching { track?.stop() }
+            runCatching { track?.release() }
         }
     }
 }

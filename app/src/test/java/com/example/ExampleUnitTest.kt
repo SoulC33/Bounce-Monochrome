@@ -31,7 +31,7 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun playerPhysicsAndCollision_autoBouncesOnSolidFloor() {
+    fun playerPhysics_normalAutoBounceClearsThreeTilePlatforms() {
         val levelManager = LevelManager()
         val level = levelManager.loadLevel(1)
         val player = Player(level.spawnX, level.spawnY)
@@ -41,17 +41,42 @@ class ExampleUnitTest {
         val particles = mutableListOf<PixelParticle>()
 
         var bouncedSurface: SurfaceType? = null
-        for (tick in 0 until 60) {
+        var floorContactBottomY = 0f
+        var minApexBottomY = Float.MAX_VALUE
+
+        for (tick in 0 until 90) {
             physics.updatePlayerPhysics(player, input) {}
             val events = collision.stepAndResolve(player, level, particles)
-            if (events.bouncedSurface != null) {
+            if (events.bouncedSurface != null && bouncedSurface == null) {
                 bouncedSurface = events.bouncedSurface
-                break
+                floorContactBottomY = player.y + player.radius
+            }
+            if (bouncedSurface != null) {
+                minApexBottomY = minOf(minApexBottomY, player.y + player.radius)
             }
         }
 
-        assertNotNull("Player should automatically bounce on the floor within 60 ticks", bouncedSurface)
-        assertTrue("Velocity Y after bounce should be upward (negative)", player.vy < 0f)
+        assertNotNull("Player should automatically bounce on the floor", bouncedSurface)
+        val risePixels = floorContactBottomY - minApexBottomY
+        // 3 tiles = 24px; normal auto-bounce must clear at least 26px to land on 3-row platforms effortlessly
+        assertTrue("Normal auto-bounce should rise > 26px (actual: $risePixels)", risePixels > 26f)
+    }
+
+    @Test
+    fun movingPlatform_doesNotSnapPlayerFromHighMidAir() {
+        val level = LevelManager().loadLevel(3)
+        val plat = level.movingPlatforms.first()
+        // Place player 35px high above the moving platform, starting to fall slowly
+        val highStartY = plat.y - 35f
+        val player = Player(plat.x + plat.width * 0.5f, highStartY)
+        player.vy = 0.2f
+
+        val physics = Physics()
+        val collision = CollisionSystem(physics)
+        val events = collision.stepAndResolve(player, level, mutableListOf())
+
+        assertEquals("Player high above platform should not bounce yet", null, events.bouncedSurface)
+        assertTrue("Player should still be high in the air", player.y < plat.y - 25f)
     }
 
     @Test

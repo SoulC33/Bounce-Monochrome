@@ -164,11 +164,13 @@ fun GameRenderer(
             }
 
             // 6. Draw Player Trail & Bouncing Pixel Ball
-            for ((idx, tp) in player.trail.withIndex()) {
+            val trailSize = player.trail.size
+            for (idx in 0 until trailSize) {
+                val tp = player.trail.elementAtOrNull(idx) ?: continue
                 val tlx = tp.x.roundToInt() - camX
                 val tly = tp.y.roundToInt() - camY
                 if (tlx in 0 until logicalW.toInt() && tly in 0 until logicalH.toInt()) {
-                    val color = if (idx >= player.trail.size - 2) palette.pixelMid else palette.pixelDim
+                    val color = if (idx >= trailSize - 2) palette.pixelMid else palette.pixelDim
                     drawLogicalPixel(offsetX, offsetY, scale, tlx, tly, color)
                 }
             }
@@ -190,7 +192,8 @@ fun GameRenderer(
             }
 
             // 7. Draw Pixel Sparks / Particles
-            for (p in particles) {
+            for (i in 0 until particles.size) {
+                val p = particles.getOrNull(i) ?: continue
                 val plx = p.x.roundToInt() - camX
                 val ply = p.y.roundToInt() - camY
                 if (plx in 0 until logicalW.toInt() && ply in 0 until logicalH.toInt()) {

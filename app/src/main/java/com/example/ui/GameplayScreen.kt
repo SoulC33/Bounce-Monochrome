@@ -642,13 +642,31 @@ private fun ArcadeHoldButton(
                 color = if (isPressed) palette.pixelBright else palette.pixelMid
             )
             .background(if (isPressed) palette.pixelBright else palette.bgDeep)
-            .pointerInput(Unit) {
+            .pointerInput(testTag) {
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val pointerId = down.id
                     isPressed = true
                     onPressedChanged(true)
                     try {
-                        waitForUpOrCancellation()
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointerId }
+                            if (change == null || !change.pressed) {
+                                break
+                            }
+                            val pos = change.position
+                            // Allow generous 16px margin around button bounds before releasing
+                            val margin = 16f
+                            val inside = pos.x >= -margin &&
+                                pos.x <= size.width + margin &&
+                                pos.y >= -margin &&
+                                pos.y <= size.height + margin
+                            if (inside != isPressed) {
+                                isPressed = inside
+                                onPressedChanged(inside)
+                            }
+                        }
                     } finally {
                         isPressed = false
                         onPressedChanged(false)
